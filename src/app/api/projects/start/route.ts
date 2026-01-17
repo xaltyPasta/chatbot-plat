@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/authOptions";
 import { NextResponse } from "next/server";
 import { chatModel } from "@/lib/gemini/client";
+import { runGeminiChat } from "@/services/chat.service"; // ✅ Added import
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -39,9 +40,6 @@ export async function POST(req: Request) {
   /**
    * 🧠 1️⃣ Generate project name using Gemini
    */
-  /**
-   * 🧠 1️⃣ Generate project name using Gemini
-   */
   let projectName = "New Project";
 
   try {
@@ -73,6 +71,7 @@ export async function POST(req: Request) {
     // CHECK 3: Catch API Errors (Invalid Keys, Network, etc)
     console.error("Gemini API Error:", err.message);
   }
+
   /**
    * 2️⃣ Create Project
    */
@@ -85,25 +84,27 @@ export async function POST(req: Request) {
   });
 
   /**
-   * 3️⃣ Create ChatSession
+   * 3️⃣ Trigger Gemini for the first message
+   * This handles creating the ChatSession and saving both the 
+   * user message and the assistant's reply.
    */
-  const chat = await prisma.chatSession.create({
-    data: {
+  try {
+    await runGeminiChat({
       projectId: project.id,
       userId: dbUser.id,
-    },
-  });
+      message: message,
+    });
+  } catch (err: any) {
+    console.error("Error generating first AI response:", err.message);
 
-  /**
-   * 4️⃣ Store first message
-   */
-  await prisma.chatMessage.create({
-    data: {
-      chatSessionId: chat.id,
-      role: "user",
-      content: message,
-    },
-  });
+    // Fallback: If AI fails, at least create the session so the page isn't broken
+    const chat = await prisma.chatSession.create({
+      data: { projectId: project.id, userId: dbUser.id }
+    });
+    await prisma.chatMessage.create({
+      data: { chatSessionId: chat.id, role: "user", content: message }
+    });
+  }
 
   /**
    * 5️⃣ File handling (Gemini File API later)
