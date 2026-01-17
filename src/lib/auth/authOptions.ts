@@ -8,13 +8,11 @@ export const authOptions: AuthOptions = {
   session: {
     strategy: "jwt",
   },
-
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     }),
-
     CredentialsProvider({
       name: "Credentials",
       credentials: {
@@ -28,6 +26,7 @@ export const authOptions: AuthOptions = {
           where: { email: credentials.email },
         });
 
+        // If user doesn't exist OR user exists but signed up via Google (no password)
         if (!user || !user.passwordHash) {
           throw new Error("USER_NOT_FOUND");
         }
@@ -37,9 +36,10 @@ export const authOptions: AuthOptions = {
           user.passwordHash
         );
 
-        if (!valid) throw new Error("INVALID_PASSWORD");
+        if (!valid) {
+          throw new Error("INVALID_PASSWORD");
+        }
 
-        // ✅ IMPORTANT: return DB user id
         return {
           id: user.id,
           email: user.email,
@@ -48,11 +48,7 @@ export const authOptions: AuthOptions = {
       },
     }),
   ],
-
   callbacks: {
-    /**
-     * ✅ THIS IS WHERE YOUR CODE GOES
-     */
     async signIn({ user, account }) {
       if (account?.provider === "google") {
         const existingUser = await prisma.user.findUnique({
@@ -71,14 +67,12 @@ export const authOptions: AuthOptions = {
       }
       return true;
     },
-
     async jwt({ token, user }) {
       if (user) {
         token.userId = user.id;
       }
       return token;
     },
-
     async session({ session, token }) {
       if (session.user && token.userId) {
         session.user.id = token.userId as string;
@@ -86,7 +80,6 @@ export const authOptions: AuthOptions = {
       return session;
     },
   },
-
   pages: {
     signIn: "/login",
   },
