@@ -8,7 +8,7 @@ type Message = {
     id: string;
     role: "user" | "assistant";
     content: string;
-    fileName?: string; // Track which file belongs to which message
+    fileName?: string;
 };
 
 const markdownStyles = `
@@ -48,18 +48,17 @@ export default function ProjectChatPage({
     }, [projectId]);
 
     const sendMessage = async () => {
-        if (!input.trim() && !file) return; // Allow sending if there's just a file or just text
+        if (!input.trim() && !file) return;
         if (loading) return;
 
         const userContent = input;
         const selectedFile = file;
 
-        // 1. Create message object with file metadata for the UI
         const userMessage: Message = {
             id: crypto.randomUUID(),
             role: "user",
             content: userContent,
-            fileName: selectedFile?.name // Store name to show in the chat bubble
+            fileName: selectedFile?.name
         };
 
         setMessages((prev) => [...prev, userMessage]);
@@ -68,25 +67,21 @@ export default function ProjectChatPage({
         setLoading(true);
 
         try {
-            // 2. Upload file ONLY if one was actually attached to THIS message
             if (selectedFile) {
                 const formData = new FormData();
                 formData.append("file", selectedFile);
-                // Tip: You might want to pass a reference ID here so the backend 
-                // knows exactly which message this file belongs to
                 await fetch(`/api/projects/${projectId}/files`, {
                     method: "POST",
                     body: formData
                 });
             }
 
-            // 3. Send chat message
             const res = await fetch(`/api/projects/${projectId}/chat`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     message: userContent,
-                    hasFile: !!selectedFile // Signal to backend if context should include a new file
+                    hasFile: !!selectedFile
                 }),
             });
 
@@ -109,27 +104,34 @@ export default function ProjectChatPage({
         <>
             <style>{markdownStyles}</style>
             <div className="d-flex flex-column h-100 bg-white">
-                <div className="flex-grow-1 overflow-auto p-3">
+
+                {/* Chat Display Area */}
+                <div className="flex-grow-1 overflow-auto p-3 p-md-4">
                     <div className="mx-auto" style={{ maxWidth: "800px" }}>
+                        {messages.length === 0 && !loading && (
+                            <div className="text-center mt-5 pt-5">
+                                <h2 className="text-muted opacity-50">Start your conversation</h2>
+                            </div>
+                        )}
+
                         {messages.map((m) => (
-                            <div key={m.id} className={`d-flex flex-column mb-4 ${m.role === "user" ? "align-items-end" : "align-items-start"}`}>
-
-                                {/* NEW: File Attachment UI inside the message stream */}
-                                {m.fileName && (
-                                    <div className="mb-1 p-2 bg-light border rounded small d-flex align-items-center" style={{ borderRadius: "10px", maxWidth: "70%" }}>
-                                        <span className="me-2">📄</span>
-                                        <span className="text-truncate">{m.fileName}</span>
-                                    </div>
-                                )}
-
-                                <div
-                                    className={`p-3 shadow-sm ${m.role === "user" ? "bg-primary text-white rounded-start" : "bg-light text-dark border rounded-end"}`}
-                                    style={{ maxWidth: "85%", borderRadius: "15px" }}
-                                >
-                                    <div className="chat-markdown">
-                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                            {m.content}
-                                        </ReactMarkdown>
+                            <div key={m.id} className={`d-flex mb-4 ${m.role === "user" ? "justify-content-end" : "justify-content-start"}`}>
+                                <div className="d-flex flex-column" style={{ maxWidth: "85%" }}>
+                                    {m.fileName && (
+                                        <div className="align-self-end mb-1 p-2 bg-light border rounded-3 small d-flex align-items-center">
+                                            <span className="me-2">📄</span>
+                                            <span className="text-truncate" style={{ maxWidth: "150px" }}>{m.fileName}</span>
+                                        </div>
+                                    )}
+                                    <div
+                                        className={`p-3 ${m.role === "user" ? "bg-light border rounded-4 text-dark" : "text-dark"}`}
+                                        style={{ borderRadius: "18px" }}
+                                    >
+                                        <div className="chat-markdown">
+                                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                {m.content}
+                                            </ReactMarkdown>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -137,9 +139,8 @@ export default function ProjectChatPage({
 
                         {loading && (
                             <div className="d-flex justify-content-start mb-4">
-                                <div className="bg-light p-3 border rounded shadow-sm text-muted" style={{ borderRadius: "15px" }}>
-                                    <div className="spinner-grow spinner-grow-sm text-primary me-2" role="status"></div>
-                                    Thinking...
+                                <div className="text-muted small ps-2">
+                                    <div className="spinner-grow spinner-grow-sm text-primary opacity-50" role="status"></div>
                                 </div>
                             </div>
                         )}
@@ -147,37 +148,80 @@ export default function ProjectChatPage({
                     </div>
                 </div>
 
-                {/* Input Area */}
-                <div className="border-top p-3 bg-white">
+                {/* Gemini Style Input Area */}
+                <div className="p-3 bg-white">
                     <div className="mx-auto" style={{ maxWidth: "800px" }}>
 
-                        {/* Staged File Preview (Before Sending) */}
+                        {/* Staged File Indicator */}
                         {file && (
-                            <div className="mb-2 d-inline-flex align-items-center bg-light border rounded-pill px-3 py-1 small">
-                                <span className="text-primary me-2">📎</span>
-                                <span className="text-muted text-truncate" style={{ maxWidth: '200px' }}>{file.name}</span>
-                                <button className="btn btn-sm text-danger ms-2 p-0" onClick={() => setFile(null)}>✕</button>
+                            <div className="mt-3 ms-2 d-inline-flex align-items-center bg-light border rounded-3 px-3 py-2 shadow-sm mb-2">
+                                <span className="me-2">📄</span>
+                                <small className="text-truncate" style={{ maxWidth: "200px" }}>{file.name}</small>
+                                <button
+                                    className="btn btn-sm ms-2 p-0 text-muted"
+                                    onClick={() => setFile(null)}
+                                >
+                                    ✕
+                                </button>
                             </div>
                         )}
 
-                        <div className="input-group shadow-sm" style={{ borderRadius: '25px', overflow: 'hidden', border: '1px solid #dee2e6' }}>
-                            <label className="btn btn-white border-0 d-flex align-items-center" style={{ cursor: 'pointer' }}>
-                                📎
-                                <input type="file" hidden onChange={(e) => e.target.files?.[0] && setFile(e.target.files[0])} />
+                        <div
+                            className="d-flex align-items-end border rounded-4 px-3 py-2 shadow-sm"
+                            style={{ minHeight: "64px", border: "none", backgroundColor: "#f0f4f9" }}
+                        >
+                            {/* File attach */}
+                            <label className="mb-2 me-2" style={{ cursor: "pointer" }}>
+                                <div className="btn btn-link text-dark p-0">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                                    </svg>
+                                </div>
+                                <input
+                                    type="file"
+                                    hidden
+                                    onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)}
+                                />
                             </label>
 
-                            <input
-                                className="form-control border-0 shadow-none px-3"
-                                placeholder="Ask anything..."
+                            {/* Auto-expanding Textarea */}
+                            <textarea
+                                className="form-control border-0 shadow-none bg-transparent flex-grow-1"
+                                placeholder=""
+                                rows={1}
+                                style={{ fontSize: "1.1rem", resize: "none", paddingBottom: "8px" }}
                                 value={input}
                                 disabled={loading}
                                 onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendMessage())}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                        e.preventDefault();
+                                        sendMessage();
+                                    }
+                                }}
                             />
 
-                            <button className="btn btn-primary border-0 px-4" onClick={sendMessage} disabled={loading || (!input.trim() && !file)}>
-                                {loading ? "..." : "Send"}
-                            </button>
+                            {/* Blue Circular Send Button */}
+                            <div className="mb-1">
+                                <button
+                                    className={`btn rounded-circle d-flex align-items-center justify-content-center p-0 transition-all ${(input.trim() || file) ? "btn-primary" : "btn-outline-secondary border-0"}`}
+                                    style={{
+                                        width: "40px",
+                                        height: "40px",
+                                        backgroundColor: (input.trim() || file) ? "#0b57d0" : "transparent"
+                                    }}
+                                    disabled={loading || (!input.trim() && !file)}
+                                    onClick={sendMessage}
+                                >
+                                    {loading ? (
+                                        <span className="spinner-border spinner-border-sm text-white" role="status"></span>
+                                    ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 -960 960 960" fill={(input.trim() || file) ? "white" : "#444746"}>
+                                            <path d="M120-160v-640l760 320-760 320Zm80-120 474-200-474-200v140l240 60-240 60v140Z" />
+                                        </svg>
+                                    )}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

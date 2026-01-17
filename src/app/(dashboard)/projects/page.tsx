@@ -44,7 +44,7 @@ export default function ProjectsPage() {
             <div className="w-100 mb-5" style={{ maxWidth: 760 }}>
                 {/* Large Title like Gemini */}
                 <h1 className="display-5 fw-semibold text-center mb-5" style={{ color: "#444746" }}>
-                    Hello, how can I help?
+                    Have an  Idea ?
                 </h1>
 
                 {/* Gemini-style Input Bar */}
@@ -71,7 +71,7 @@ export default function ProjectsPage() {
                     {/* Text input (Auto-expanding style) */}
                     <textarea
                         className="form-control border-0 shadow-none bg-transparent flex-grow-1"
-                        placeholder="Enter a prompt here"
+                        placeholder="Transform your ideas into projects"
                         rows={1}
                         style={{ fontSize: "1.1rem", resize: "none", paddingBottom: "8px" }}
                         value={message}
