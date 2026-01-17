@@ -1,13 +1,14 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, Suspense } from "react"; // 1. Import Suspense
 
-export default function SignupPage() {
+function SignupForm() { // 2. Move logic into a sub-component
     const params = useSearchParams();
     const router = useRouter();
 
     const [name, setName] = useState("");
+    // We move the default email check inside the component
     const [email, setEmail] = useState(params.get("email") || "");
     const [password, setPassword] = useState("");
 
@@ -38,7 +39,7 @@ export default function SignupPage() {
                 className="form-control mb-2"
                 placeholder="Email"
                 value={email}
-                onChange={(e)=> setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value)}
             />
 
             <input
@@ -53,5 +54,14 @@ export default function SignupPage() {
                 Sign Up
             </button>
         </div>
+    );
+}
+
+// 3. Export the page wrapped in Suspense
+export default function SignupPage() {
+    return (
+        <Suspense fallback={<div className="text-center mt-5">Loading...</div>}>
+            <SignupForm />
+        </Suspense>
     );
 }
