@@ -20,7 +20,7 @@ export const genAI = new GoogleGenerativeAI(apiKey);
  * Optimized for speed using gemini-1.5-flash
  */
 export const chatModel = genAI.getGenerativeModel({
-  model: "gemini-3-flash-preview",
+  model: "gemini-2.5-flash",
 });
 
 /**

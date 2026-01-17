@@ -1,6 +1,6 @@
 import { chatModel } from "@/lib/gemini/client";
 import { prisma } from "@/lib/db/prisma";
-import type { Content, Part } from "@google/generative-ai";
+import type { Content } from "@google/generative-ai";
 
 const MAX_HISTORY_MESSAGES = 10;
 
@@ -45,34 +45,17 @@ export async function runGeminiChat({
     where: { projectId },
   });
 
-  // 4️⃣ Build Gemini contents (TYPE SAFE)
-  interface SystemPromptContent extends Content {
-    role: "system";
-    parts: [{ text: string }];
-  }
-
-  interface MessageContent extends Content {
-    role: "user" | "assistant";
-    parts: [{ text: string }];
-  }
-
-  interface FileContent extends Content {
-    role: "user";
-    parts: [{ fileData: { fileUri: string; mimeType: string } }];
-  }
-
-  const contents: (SystemPromptContent | MessageContent | FileContent)[] = [
+  // 4️⃣ Build Gemini contents (Correctly mapping assistant -> model)
+  const contents: Content[] = [
     {
-      role: "system",
-      parts: [{ text: project.systemPrompt }],
-    } as SystemPromptContent,
-
-    ...chat.messages.map((m: { role: string; content: any; }): MessageContent => ({
-      role: m.role as "user" | "assistant",
+      role: "user",
+      parts: [{ text: `System Instruction: ${project.systemPrompt}` }],
+    },
+    ...chat.messages.map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: m.content }],
     })),
-
-    ...files.map((f: { geminiFileId: any; }): FileContent => ({
+    ...files.map((f) => ({
       role: "user",
       parts: [
         {
@@ -83,20 +66,14 @@ export async function runGeminiChat({
         },
       ],
     })),
-
     {
       role: "user",
       parts: [{ text: message }],
-    } as MessageContent,
+    },
   ];
 
-  // 5️⃣ Call Gemini (NO `files` FIELD)
+  // 5️⃣ Call Gemini
   const result = await chatModel.generateContent({ contents });
-
-  console.log(
-    "GEMINI RESPONSE:",
-    JSON.stringify(result.response, null, 2)
-  );
 
   const assistantReply =
     result.response.candidates?.[0]?.content?.parts?.[0]?.text ??
