@@ -3,7 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/authOptions";
 import { NextResponse } from "next/server";
 import { chatModel } from "@/lib/gemini/client";
-import { runGeminiChat } from "@/services/chat.service"; // ✅ Added import
+import { runGeminiChat } from "@/services/chat.service";
+import { uploadFileToGemini } from "@/services/file.service";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -49,17 +50,7 @@ export async function POST(req: Request) {
       },
     ]);
 
-    // CHECK 1: See the raw response object
-    console.log("Gemini Raw Result:", JSON.stringify(titleResult, null, 2));
-
-    // CHECK 2: Check if it was blocked by safety
-    const safety = titleResult.response.promptFeedback;
-    if (safety?.blockReason) {
-      console.warn("Gemini blocked the prompt:", safety.blockReason);
-    }
-
     const rawTitle = titleResult.response.text();
-    console.log("Gemini Returned Text:", rawTitle);
 
     if (rawTitle) {
       projectName = rawTitle
@@ -68,8 +59,7 @@ export async function POST(req: Request) {
         .slice(0, 50);
     }
   } catch (err: any) {
-    // CHECK 3: Catch API Errors (Invalid Keys, Network, etc)
-    console.error("Gemini API Error:", err.message);
+    console.error("Gemini Title API Error:", err.message);
   }
 
   /**
@@ -84,33 +74,53 @@ export async function POST(req: Request) {
   });
 
   /**
-   * 3️⃣ Trigger Gemini for the first message
-   * This handles creating the ChatSession and saving both the 
-   * user message and the assistant's reply.
+   * 3️⃣ Handle File Upload to Gemini & DB
+   */
+  let geminiFileUri: string | undefined;
+  let fileMimeType: string | undefined;
+
+  if (file && file.size > 0) {
+    try {
+      fileMimeType = file.type || "application/octet-stream";
+      // Upload via your file service
+      geminiFileUri = await uploadFileToGemini(file);
+
+      // Save reference to DB using your exact schema fields
+      await prisma.projectFileReference.create({
+        data: {
+          projectId: project.id,
+          geminiFileId: geminiFileUri,
+          originalFilename: file.name,
+          mimeType: fileMimeType,
+        },
+      });
+    } catch (uploadErr: any) {
+      console.error("File handling failed:", uploadErr.message);
+      // We continue even if file fails so the project is still created
+    }
+  }
+
+  /**
+   * 4️⃣ Trigger Gemini for the first message
    */
   try {
     await runGeminiChat({
       projectId: project.id,
       userId: dbUser.id,
       message: message,
+      fileUri: geminiFileUri, // Pass the URI to the service
+      fileMime: fileMimeType,
     });
   } catch (err: any) {
     console.error("Error generating first AI response:", err.message);
 
-    // Fallback: If AI fails, at least create the session so the page isn't broken
+    // Fallback: If AI fails, create the session so the page isn't broken
     const chat = await prisma.chatSession.create({
       data: { projectId: project.id, userId: dbUser.id }
     });
     await prisma.chatMessage.create({
       data: { chatSessionId: chat.id, role: "user", content: message }
     });
-  }
-
-  /**
-   * 5️⃣ File handling (Gemini File API later)
-   */
-  if (file) {
-    // placeholder — Gemini File API integration
   }
 
   return NextResponse.json({ projectId: project.id });
