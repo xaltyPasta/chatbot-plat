@@ -43,6 +43,104 @@ export async function GET(
 /**
  * POST: Send message and include the latest uploaded file context
  */
+// export async function POST(
+//     req: Request,
+//     { params }: { params: Promise<{ projectId: string }> }
+// ) {
+//     const { projectId } = await params;
+//     const session = await getServerSession(authOptions);
+
+//     if (!session?.user?.email) {
+//         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+//     }
+
+//     const dbUser = await prisma.user.findUnique({
+//         where: { email: session.user.email },
+//     });
+
+//     if (!dbUser) {
+//         return NextResponse.json({ error: "User not found" }, { status: 401 });
+//     }
+
+//     // Capture 'hasFile' from the frontend request
+//     const { message, hasFile } = await req.json();
+
+//     if (!message?.trim()) {
+//         return NextResponse.json({ error: "Message required" }, { status: 400 });
+//     }
+
+//     try {
+//         // 1. Resolve or Create Chat Session
+//         let chatSession = await prisma.chatSession.findFirst({
+//             where: { projectId, userId: dbUser.id }
+//         });
+
+//         if (!chatSession) {
+//             chatSession = await prisma.chatSession.create({
+//                 data: { projectId, userId: dbUser.id }
+//             });
+//         }
+
+//         // 2. Save User Message to DB
+//         await prisma.chatMessage.create({
+//             data: {
+//                 chatSessionId: chatSession.id,
+//                 role: "user",
+//                 content: message,
+//             }
+//         });
+
+//         // 3. Construct Multi-modal parts
+//         const promptParts: any[] = [{ text: message }];
+
+//         /**
+//          * LOGIC CHANGE: 
+//          * Only fetch and attach the file if the user explicitly uploaded one 
+//          * with this specific message (hasFile === true).
+//          */
+//         if (hasFile) {
+//             const latestFile = await prisma.projectFileReference.findFirst({
+//                 where: { projectId: projectId },
+//                 orderBy: { createdAt: "desc" },
+//             });
+
+//             if (latestFile) {
+//                 promptParts.push({
+//                     fileData: {
+//                         mimeType: latestFile.mimeType,
+//                         fileUri: latestFile.geminiFileId,
+//                     },
+//                 });
+//             }
+//         }
+
+//         // 4. Generate Response
+//         // Note: If hasFile is false, Gemini only receives the text.
+//         const result = await chatModel.generateContent({
+//             contents: [{ role: "user", parts: promptParts }],
+//         });
+
+//         const reply = result.response.text();
+
+//         // 5. Save Assistant Message
+//         await prisma.chatMessage.create({
+//             data: {
+//                 chatSessionId: chatSession.id,
+//                 role: "assistant",
+//                 content: reply,
+//             }
+//         });
+
+//         return NextResponse.json({ reply });
+
+//     } catch (error: any) {
+//         console.error("Chat Error:", error);
+//         return NextResponse.json(
+//             { error: "Failed to process chat", details: error.message },
+//             { status: 500 }
+//         );
+//     }
+// }
 export async function POST(
     req: Request,
     { params }: { params: Promise<{ projectId: string }> }
@@ -62,7 +160,6 @@ export async function POST(
         return NextResponse.json({ error: "User not found" }, { status: 401 });
     }
 
-    // Capture 'hasFile' from the frontend request
     const { message, hasFile } = await req.json();
 
     if (!message?.trim()) {
@@ -81,23 +178,28 @@ export async function POST(
             });
         }
 
-        // 2. Save User Message to DB
-        await prisma.chatMessage.create({
-            data: {
-                chatSessionId: chatSession.id,
-                role: "user",
-                content: message,
-            }
+        /**
+         * 2. NEW: Fetch Context Window (Last N messages)
+         * We fetch the last 10 messages to provide context.
+         */
+        const CONTEXT_LIMIT = 3;
+        const previousMessages = await prisma.chatMessage.findMany({
+            where: { chatSessionId: chatSession.id },
+            orderBy: { createdAt: "desc" },
+            take: CONTEXT_LIMIT,
         });
 
-        // 3. Construct Multi-modal parts
-        const promptParts: any[] = [{ text: message }];
+        // Gemini expects chronological order: oldest to newest
+        // Also maps "assistant" role to "model"
+        const history = previousMessages.reverse().map((msg) => ({
+            role: msg.role === "assistant" ? "model" : "user",
+            parts: [{ text: msg.content }],
+        }));
 
-        /**
-         * LOGIC CHANGE: 
-         * Only fetch and attach the file if the user explicitly uploaded one 
-         * with this specific message (hasFile === true).
-         */
+        // 3. Construct current message parts
+        const currentParts: any[] = [{ text: message }];
+
+        // Keep your existing file attachment logic
         if (hasFile) {
             const latestFile = await prisma.projectFileReference.findFirst({
                 where: { projectId: projectId },
@@ -105,7 +207,7 @@ export async function POST(
             });
 
             if (latestFile) {
-                promptParts.push({
+                currentParts.push({
                     fileData: {
                         mimeType: latestFile.mimeType,
                         fileUri: latestFile.geminiFileId,
@@ -114,15 +216,30 @@ export async function POST(
             }
         }
 
-        // 4. Generate Response
-        // Note: If hasFile is false, Gemini only receives the text.
+        /**
+         * 4. Generate Response
+         * We pass the 'history' plus the 'current message' as the contents array.
+         */
         const result = await chatModel.generateContent({
-            contents: [{ role: "user", parts: promptParts }],
+            contents: [
+                ...history,
+                { role: "user", parts: currentParts }
+            ],
         });
 
         const reply = result.response.text();
 
-        // 5. Save Assistant Message
+        // 5. Save BOTH messages to DB to maintain history for the next call
+        // Save User Message
+        await prisma.chatMessage.create({
+            data: {
+                chatSessionId: chatSession.id,
+                role: "user",
+                content: message,
+            }
+        });
+
+        // Save Assistant Message
         await prisma.chatMessage.create({
             data: {
                 chatSessionId: chatSession.id,
